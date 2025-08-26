@@ -1,0 +1,97 @@
+---
+title: "Practical Machine Learning — Project"
+author: "Mayank Pandit"
+output: html_document
+---
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(2025)
+
+# =====================================================
+# INTRODUCTION
+# =====================================================
+# The goal of this project is to predict the manner in 
+# which participants performed barbell lifts. The outcome 
+# variable is `classe` (A–E). We will use a Random Forest 
+# model because it is robust, accurate, and handles many 
+# predictors automatically.
+
+# =====================================================
+# DATA LOADING & CLEANING
+# =====================================================
+if (!requireNamespace("randomForest", quietly = TRUE)) install.packages("randomForest")
+library(randomForest)
+
+train_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test_url  <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+if (!file.exists("pml-training.csv")) download.file(train_url, "pml-training.csv", method="libcurl", quiet=TRUE)
+if (!file.exists("pml-testing.csv"))  download.file(test_url,  "pml-testing.csv",  method="libcurl", quiet=TRUE)
+
+train_raw <- read.csv("pml-training.csv", na.strings=c("NA","","#DIV/0!"))
+test_raw  <- read.csv("pml-testing.csv",  na.strings=c("NA","","#DIV/0!"))
+
+# Drop ID/time columns
+drop_cols <- intersect(c("X","user_name","raw_timestamp_part_1","raw_timestamp_part_2",
+                         "cvtd_timestamp","new_window","num_window"), names(train_raw))
+train <- train_raw[, setdiff(names(train_raw), drop_cols)]
+test  <- test_raw[,  setdiff(names(test_raw),  drop_cols)]
+
+# Remove cols with >95% NA
+keep <- names(train)[sapply(train, function(x) mean(is.na(x)) <= 0.95)]
+train <- train[, keep, drop=FALSE]
+
+# Ensure outcome
+if (!"classe" %in% names(train)) train$classe <- train_raw$classe
+train$classe <- factor(train$classe)
+
+# Keep numeric predictors
+num_preds <- names(train)[sapply(train, is.numeric)]
+train <- train[, unique(c(num_preds, "classe")), drop=FALSE]
+test  <- test[,  intersect(num_preds, names(test)), drop=FALSE]
+
+# =====================================================
+# MODELING & VALIDATION
+# =====================================================
+n <- nrow(train); idx <- sample.int(n, size=floor(0.7*n))
+trn <- train[idx, ]; val <- train[-idx, ]
+
+rf <- randomForest(classe ~ ., data=trn, ntree=300)
+pred_val <- predict(rf, newdata=val)
+acc <- mean(pred_val == val$classe)
+
+cat("Validation Accuracy (~expected out-of-sample):", acc, "\n")
+print(rf)
+
+# =====================================================
+# FINAL MODEL & PREDICTIONS
+# =====================================================
+rf_full <- randomForest(classe ~ ., data=train, ntree=300)
+common <- intersect(names(train), c(names(test), "classe"))
+pred_test <- predict(rf_full, newdata=test[, setdiff(common,"classe"), drop=FALSE])
+
+cat("20 Predictions for Coursera Quiz:\n")
+print(pred_test)
+
+# =====================================================
+# FILE OUTPUT FUNCTION
+# =====================================================
+pml_write_files <- function(x){
+  for (i in seq_along(x)) {
+    fn <- paste0("problem_id_", i, ".txt")
+    write.table(x[i], file=fn, quote=FALSE, row.names=FALSE, col.names=FALSE)
+  }
+}
+
+# Uncomment to generate submission files:
+# pml_write_files(pred_test)
+
+# =====================================================
+# CONCLUSION
+# =====================================================
+# - Cleaned the dataset by dropping IDs and NA-heavy columns.
+# - Trained a Random Forest with 300 trees.
+# - Validation accuracy was about 99%.
+# - Generated 20 predictions for the Coursera quiz.
+# - Function provided to create the 20 .txt submission files.
+
